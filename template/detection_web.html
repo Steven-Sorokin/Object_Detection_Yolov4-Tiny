@@ -1,0 +1,204 @@
+<!-- 
+    Object Detection web interface using HTML, CSS and JavaScript.
+    ---------------------------------------------------------------
+    - Displays live stream from the Raspberry Pi 
+      with all the detection already modules applied 
+    - Provides 4 checkboxes to choose what detections to display 
+      and shows the detected object and time of detection in a seperate box.
+    - Added a sound button - when activated it will provide 
+      the sound of the detected object:  Human, Cat and Dog.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Raspberry-Pi Object Detection "Door Bell"</title>
+
+    <style>
+        /*Background*/
+        body {                                 /*Background file location*/
+            background-image: url("{{ url_for('static', filename='background.jpg') }}");
+            background-size: cover;
+            background-position: center;
+            color: white;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        .container {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            width: 80%;
+            max-width: 1200px;
+            padding: 20px;
+            background-color: rgba(0, 0, 0, 0.5);
+            border-radius: 10px;
+        }
+
+        /* Stream */
+        .video-section {
+            width: 70%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* Due to resolution changes (zoom/stretching) this fixes it (480px)*/
+        .video-container img {
+            display: block;
+            max-width: 100%;
+            height: auto;
+            max-height: 480px;
+            object-fit: contain;
+        }
+
+        /* Checkboxes */
+        .checkbox-section {
+            width: 28%;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            justify-content: flex-start;
+        }
+
+        h1, h2 {
+            text-align: center;
+        }
+
+        /* Detection info box */
+        #detection_info {
+            width: 100%;
+            height: 200px;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+
+        .checkbox-section label {
+            margin-bottom: 10px;
+        }
+
+        /* Sound button */
+        .sound-button {
+            display: block;
+            margin-top: 10px;
+            padding: 10px;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            text-align: center;
+            width: 100%;
+        }
+
+        .sound-on {
+            background-color: red; /* on */
+        }
+
+        .sound-off {
+            background-color: green; /* off */
+        }
+    </style>
+
+    <script>
+        let soundEnabled = false;
+
+        /* Sound button toggle */
+        function toggleSound() {
+            soundEnabled = !soundEnabled; // to use only 1 button states
+            let button = document.getElementById('toggle-sound-btn');
+
+            if (soundEnabled) {
+                button.className = "sound-button sound-on";
+                button.innerText = "Disable Sound"; // ON
+            } else {
+                button.className = "sound-button sound-off";
+                button.innerText = "Enable Sound"; // OFF
+            }
+        }
+
+        /* Detection Info box from detection_info and plays the sound */
+        function refreshDetectionInfo() {
+            fetch('/detection_info')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('detection_info').value = data.last_detection;
+
+                    if (soundEnabled) {
+                        // only when objects is detected
+                        if (data.current_objects.includes("person")) {
+                            playSound("person");
+                        }
+                        if (data.current_objects.includes("cat")) {
+                            playSound("cat");
+                        }
+                        if (data.current_objects.includes("dog")) {
+                            playSound("dog");
+                        }
+                    }
+                });
+        }
+
+        /* Play the sound and wait 5 second per object */
+        let lastSoundTime = {};
+        function playSound(objectType) {
+            let now = new Date().getTime();
+            let soundDelay = 5000; // 5 sec
+
+            if (!lastSoundTime[objectType] || now - lastSoundTime[objectType] > soundDelay) {
+                let audio = document.getElementById(objectType + "-audio");
+                if (audio) {
+                    audio.play();
+                    lastSoundTime[objectType] = now;
+                }
+            }
+        }
+
+        /* refresh detection info every 2 sec */
+        setInterval(refreshDetectionInfo, 2000);
+    </script>
+</head>
+<body>
+    <div class="container">
+
+        <!-- stream from Flask -->
+        <div class="video-section">
+            <h1>YOLO Object Detection Stream</h1>
+            <div class="video-container">
+                <img src="{{ url_for('video_feed') }}" alt="Video Stream"> 
+            </div>
+        </div>
+
+        <!-- checkboxes -->
+        <div class="checkbox-section">
+            <h2>Choose Classes to Detect:</h2>
+            <form action="/set_filter" method="post">
+                <label><input type="checkbox" name="class" value="person" {% if 'person' in active_classes %}checked{% endif %}> Person</label><br>                    <!-- human -->
+                <label><input type="checkbox" name="class" value="cat" {% if 'cat' in active_classes %}checked{% endif %}> Cat</label><br>                             <!-- cat -->
+                <label><input type="checkbox" name="class" value="dog" {% if 'dog' in active_classes %}checked{% endif %}> Dog</label><br>                             <!-- dog -->
+                <label><input type="checkbox" name="class" value="other" {% if 'other' in active_classes %}checked{% endif %}> Other Detected Objects</label><br>      <!-- other detections -->
+                <button type="submit">Update</button>
+            </form>
+
+            <!-- sound button -->
+            <button id="toggle-sound-btn" class="sound-button sound-off" onclick="toggleSound()">Enable Sound</button>
+
+            <!-- detection info -->
+            <h2>Detection Information:</h2>
+            <textarea id="detection_info" rows="4" cols="50" readonly>{{ detection_info }}</textarea>
+
+            <!-- audio files location -->
+            <audio id="person-audio" src="{{ url_for('static', filename='person-human.mp3') }}"></audio>    <!-- human -->
+            <audio id="cat-audio" src="{{ url_for('static', filename='cat-meow.mp3') }}"></audio>           <!-- cat -->
+            <audio id="dog-audio" src="{{ url_for('static', filename='dog-bark.mp3') }}"></audio>           <!-- dog -->
+        </div>
+    </div>
+</body>
+</html>
